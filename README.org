@@ -126,6 +126,10 @@
 
      Redis key used is <modelname>:<field>:<value>, value stored is a
      set of instance ids with that value for indexed field.
+**** /indexSorted/
+     If field has index=true, then indexSorted instructs Redson
+     to use sorted set with key <modelname>:<field> and <value> as score
+     except of typical sets.
 **** /indexCollate/
      If field has index=true, then indexCollate instructs Redson
      whether or not to perform string cleaning (removing punctuation,

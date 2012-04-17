@@ -12,6 +12,7 @@ module Snap.Snaplet.Redson.Search
     , prefixMatch
     , substringMatch
     , redisSearch
+    , redisRangeSearch
     )
 
 where
@@ -75,3 +76,30 @@ redisSearch model searchTerms patFunction =
      in
        -- Try to get search results for every index field
        mapM (getTermIds . (patFunction mname)) searchTerms
+
+------------------------------------------------------------------------------
+-- | Redis action which returns list of matching instance id's for
+-- terms lied in range
+redisRangeSearch :: Model
+            -- ^ Model instances of which are being searched
+            -> FieldName
+            -- ^ Searching index name
+            -> Double
+            -- ^ Lower bound of interval
+            -> Double
+            -- ^ Upper bound of interval
+            -> Redis [InstanceId]
+redisRangeSearch model name lower upper =
+    do
+        let mname = modelName model
+
+        Right sets <- zrangebyscore (modelIndexSorted mname name) lower upper
+        case sets of
+          -- Do not attempt sunion with no arguments.
+            [] -> return []
+            _ -> do
+              -- TODO Maybe use sunionstore and perform further
+              -- operations on Redis as well.
+              Right ids <- sunion sets
+              return ids
+

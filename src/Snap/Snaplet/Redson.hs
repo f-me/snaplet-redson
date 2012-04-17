@@ -419,7 +419,8 @@ search =
               query       <- fromMaybe "" <$> getParam "q"
               -- Produce Just SearchTerm
               let collate c = if c then CRUD.collate else Prelude.id
-              let indexValues = map (mapSnd (`collate` query)) $ indices m
+              let indexValues = map (mapSnd (`collate` query) . dropThrd) 
+                                    $ indices m
 
               -- For every term, get list of ids which match it
               termIds <- runRedisDB database $
@@ -442,6 +443,8 @@ search =
                         _ -> writeLBS $ A.encode $
                              map (`CRUD.onlyFields` outFields) instances
 
+dropThrd :: (a, b, c) -> (a, b)
+dropThrd (a, b, _) = (a, b)
 
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd f (a, b) = (a, f b)

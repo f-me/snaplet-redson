@@ -26,8 +26,8 @@ type FieldName = B.ByteString
 
 type FieldValue = B.ByteString
 
--- | Name of indexed field and collation flag.
-type FieldIndex = (FieldName, Bool)
+-- | Name of indexed field, collation and ordered flag.
+type FieldIndex = (FieldName, Bool, Bool)
 
 
 -- | List of field key-value pairs.
@@ -59,6 +59,7 @@ data Field = Field { name           :: FieldName
                    , fieldType      :: B.ByteString
                    , index          :: Bool
                    , indexCollate   :: Bool
+                   , indexSorted    :: Bool
                    , groupName      :: Maybe B.ByteString
                    , meta           :: Maybe FieldMeta
                    , _canRead       :: Permissions
@@ -149,6 +150,7 @@ instance FromJSON Field where
       v .:? "type" .!= defaultFieldType <*>
       v .:? "index"        .!= False    <*>
       v .:? "indexCollate" .!= False    <*>
+      v .:? "indexSorted " .!= False    <*>
       v .:? "groupName"                 <*>
       v .:? "meta"                      <*>
       v .:? "canRead"  .!= Nobody       <*>
@@ -161,6 +163,7 @@ instance ToJSON Field where
       , "type"          .= fieldType f
       , "index"         .= index f
       , "indexCollate"  .= indexCollate f
+      , "indexSorted "  .= indexSorted f
       , "groupName"     .= groupName f
       , "canRead"       .= _canRead f
       , "canWrite"      .= _canWrite f
@@ -262,8 +265,8 @@ cacheIndices :: Model -> Model
 cacheIndices model = 
     let
         maybeCacheIndex indexList field =
-            case (index field, indexCollate field) of
-              (True, c) -> (name field, c):indexList
+            case (index field, indexCollate field, indexSorted field) of
+              (True, c, o) -> (name field, c, o):indexList
               _ -> indexList
     in
       model{indices = foldl' maybeCacheIndex [] (fields model)}
