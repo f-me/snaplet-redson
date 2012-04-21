@@ -150,7 +150,7 @@ instance FromJSON Field where
       v .:? "type" .!= defaultFieldType <*>
       v .:? "index"        .!= False    <*>
       v .:? "indexCollate" .!= False    <*>
-      v .:? "indexSorted " .!= False    <*>
+      v .:? "indexSorted" .!= False     <*>
       v .:? "groupName"                 <*>
       v .:? "meta"                      <*>
       v .:? "canRead"  .!= Nobody       <*>

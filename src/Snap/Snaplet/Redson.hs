@@ -26,6 +26,7 @@ import Data.Functor
 import Data.Aeson as A
 
 import qualified Data.ByteString as B
+import qualified Data.ByteString.UTF8 as BU (toString, break)
 import qualified Data.ByteString.Lazy as LB (ByteString)
 
 import Data.Configurator
@@ -56,7 +57,6 @@ import Snap.Snaplet.Redson.Snapless.Metamodel.Loader (loadModels)
 import Snap.Snaplet.Redson.Permissions
 import Snap.Snaplet.Redson.Search
 import Snap.Snaplet.Redson.Util
-
 
 ------------------------------------------------------------------------------
 -- | Redson snaplet state type.
@@ -383,6 +383,17 @@ defaultSearchLimit = 100
 search :: Handler b (Redson b) ()
 search = 
     let
+        rangeParse :: B.ByteString -> Maybe (Double, Double)
+        rangeParse str =
+            monadPairZip md1 md2'
+          where
+            (t, h) = BU.break (== '-') str
+            h' = B.drop 1 h
+            md1 = CRUD.maybeRead $ BU.toString $ CRUD.collate t
+            md2 = CRUD.maybeRead $ BU.toString $ CRUD.collate h'
+            md2' = maybe md1 Just md2
+            monadPairZip f g = do { a <- f; b <- g; return (a, b); }
+
         intersectAll = foldl1' intersect
         unionAll = foldl1' union
         -- Fetch instance by id to JSON
@@ -420,14 +431,23 @@ search =
               -- Produce Just SearchTerm
               let collate c = if c then CRUD.collate else Prelude.id
               let indexValues = map (mapSnd (`collate` query) . dropThrd) 
-                                    $ indices m
+                                    $ filter (not . thrd) $ indices m
 
+              termIds' <-
+                case rangeParse query of
+                  Just (d1, d2) ->
+                    mapM (\(a, _, _) ->
+                          runRedisDB database $
+                            redisRangeSearch m a d1 d2)
+                        $ filter thrd $ indices m
+                  Nothing -> return []
+              
               -- For every term, get list of ids which match it
               termIds <- runRedisDB database $
                          redisSearch m indexValues patFunction
-
+              
               modifyResponse $ setContentType "application/json"
-              case (filter (not . null) termIds) of
+              case (filter (not . null) (termIds' ++ termIds)) of
                 [] -> writeLBS $ A.encode ([] :: [Value])
                 tids -> do
                       -- Finally, list of matched instances
@@ -445,6 +465,9 @@ search =
 
 dropThrd :: (a, b, c) -> (a, b)
 dropThrd (a, b, _) = (a, b)
+
+thrd :: (a, b, c) -> c
+thrd (_, _, c) = c
 
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd f (a, b) = (a, f b)

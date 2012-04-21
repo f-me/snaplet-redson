@@ -21,6 +21,7 @@ module Snap.Snaplet.Redson.Snapless.CRUD
     , modelTimeline
     , collate
     , onlyFields
+    , maybeRead
     )
 
 where

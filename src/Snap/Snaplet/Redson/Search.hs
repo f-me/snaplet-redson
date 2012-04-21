@@ -24,7 +24,6 @@ import Database.Redis
 import Snap.Snaplet.Redson.Snapless.CRUD
 import Snap.Snaplet.Redson.Snapless.Metamodel
 
-
 ------------------------------------------------------------------------------
 -- | A function which fill build Redis key pattern for certain way of
 -- matching values of index field.
@@ -94,12 +93,6 @@ redisRangeSearch model name lower upper =
         let mname = modelName model
 
         Right sets <- zrangebyscore (modelIndexSorted mname name) lower upper
-        case sets of
-          -- Do not attempt sunion with no arguments.
-            [] -> return []
-            _ -> do
-              -- TODO Maybe use sunionstore and perform further
-              -- operations on Redis as well.
-              Right ids <- sunion sets
-              return ids
+
+        return sets
 
