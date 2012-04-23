@@ -389,8 +389,8 @@ search =
           where
             (t, h) = BU.break (== '-') str
             h' = B.drop 1 h
-            md1 = CRUD.maybeRead $ BU.toString $ CRUD.collate t
-            md2 = CRUD.maybeRead $ BU.toString $ CRUD.collate h'
+            md1 = maybeRead $ BU.toString $ CRUD.collate t
+            md2 = maybeRead $ BU.toString $ CRUD.collate h'
             md2' = maybe md1 Just md2
             monadPairZip f g = do { a <- f; b <- g; return (a, b); }
 

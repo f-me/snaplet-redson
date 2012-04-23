@@ -20,6 +20,11 @@ import Data.Maybe
 import Snap.Core
 
 ------------------------------------------------------------------------------
+-- | Reads input from string, return Nothing on parsing error 
+maybeRead :: Read a => String -> Maybe a
+maybeRead s = fmap fst . listToMaybe . reads
+
+------------------------------------------------------------------------------
 -- | Get parameter value from Request or return empty string
 fromParam :: MonadSnap m => ByteString -> m ByteString
 fromParam p = fromMaybe "" <$> getParam p

@@ -21,7 +21,6 @@ module Snap.Snaplet.Redson.Snapless.CRUD
     , modelTimeline
     , collate
     , onlyFields
-    , maybeRead
     )
 
 where
@@ -42,18 +41,9 @@ import qualified Data.Map as M
 import Database.Redis
 
 import Snap.Snaplet.Redson.Snapless.Metamodel
+import Snap.Snaplet.Redson.Util
 
 type InstanceId = B.ByteString
-
-
-maybeRead :: Read a => String -> Maybe a
-maybeRead s =
-    case reads s of
-        [(x, s')] -> 
-          if (s' == "")
-            then Just x
-            else Nothing
-        _ -> Nothing
 
 ------------------------------------------------------------------------------
 -- | Build Redis key given model name and instance id
