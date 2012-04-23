@@ -129,7 +129,7 @@
 **** /indexSorted/
      If field has index=true, then indexSorted instructs Redson
      to use sorted set with key <modelname>:<field> and <value> as score
-     except of typical sets.
+     instead of typical sets.
 **** /indexCollate/
      If field has index=true, then indexCollate instructs Redson
      whether or not to perform string cleaning (removing punctuation,
