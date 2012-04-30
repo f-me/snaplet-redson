@@ -20,13 +20,14 @@ module Snap.Snaplet.Redson.Snapless.CRUD
     , modelIndex
     , modelIndexSorted
     , modelTimeline
-    , collate
+    , collateValue
     , onlyFields
     )
 where
 
 import Prelude hiding (id, read)
 
+import Control.Arrow (second)
 import Control.Monad.State
 import Data.Functor
 import Data.Maybe
@@ -40,6 +41,7 @@ import qualified Data.Map as M
 
 import Database.Redis
 
+import Snap.Snaplet.Redson.Snapless.Index
 import Snap.Snaplet.Redson.Snapless.Metamodel
 import Snap.Snaplet.Redson.Util
 
@@ -81,8 +83,8 @@ modelIndexSorted model field = B.concat [model, ":", field]
 
 ------------------------------------------------------------------------------
 -- | Strip value of punctuation, spaces, convert all to lowercase.
-collate :: FieldValue -> FieldValue
-collate = E.encodeUtf8 . T.toLower .
+collateValue :: FieldValue -> FieldValue
+collateValue = E.encodeUtf8 . T.toLower .
           (T.filter (\c -> (not (isSpace c || isPunctuation c)))) .
           E.decodeUtf8
 
@@ -92,31 +94,31 @@ collate = E.encodeUtf8 . T.toLower .
 --
 -- Action is called with index field name and its value in commit.
 forIndices :: Commit
-           -> [FieldIndex]
+           -> IndicesTable
            -> (FieldName -> FieldValue -> Bool -> Redis ())
            -> Redis ()
-forIndices commit findices action =
+forIndices commit indsTbl action =
     mapM_ (\(i, o) -> case (M.lookup i commit) of
                        Just v -> action i v o
                        Nothing -> return ())
-    ((\(a, _, o) -> (a, o)) <$> findices)
+    (second sorted <$> M.toList indsTbl)
 
 ------------------------------------------------------------------------------
 -- | Create reverse indices for new commit.
 createIndices :: ModelName
               -> InstanceId
               -> Commit
-              -> [FieldIndex]
+              -> IndicesTable
               -> Redis ()
 createIndices mname id commit findices =
     forIndices commit findices $
-                   \i rawVal isOrdered -> 
+                   \i rawVal isSorted -> 
                        let 
-                           v = collate rawVal
+                           v = collateValue rawVal
                            mdv = maybeRead $ BU.toString v
                        in
                          when (v /= "") $
-                         if isOrdered
+                         if isSorted
                            then 
                              case mdv of
                                Just dv -> zadd (modelIndexSorted mname i) [(dv, id)] >> return ()
@@ -165,9 +167,9 @@ onlyFields commit names = map (flip M.lookup commit) names
 -- TODO: Support pubsub from here
 create :: ModelName           -- ^ Model name
        -> Commit              -- ^ Key-values of instance data
-       -> [FieldIndex]
+       -> IndicesTable
        -> Redis (Either Reply InstanceId)
-create mname commit findices = do
+create mname commit indsTbl = do
   -- Take id from global:model:id
   Right n <- incr $ modelIdKey mname
   newId <- return $ (B.pack . show) n
@@ -176,7 +178,7 @@ create mname commit findices = do
   _ <- hmset (instanceKey mname newId) (M.toList commit)
   _ <- lpush (modelTimeline mname) [newId]
 
-  createIndices mname newId commit findices
+  createIndices mname newId commit indsTbl
   return (Right newId)
 
 
@@ -196,14 +198,14 @@ read mname id = (fmap M.fromList) <$> hgetall key
 update :: ModelName
        -> InstanceId
        -> Commit
-       -> [FieldIndex]
+       -> IndicesTable
        -> Redis (Either Reply ())
-update mname id commit findices =
+update mname id commit indsTbl =
   let
       key = instanceKey mname id
       unpacked = M.toList commit
       newFields = map fst unpacked
-      inds = (\(a, _, b) -> (a, b)) <$> findices
+      inds = second sorted <$> M.toList indsTbl
   in do
     old <- getOldIndices key $ map fst inds
     hmset key unpacked
@@ -212,7 +214,7 @@ update mname id commit findices =
                   zipWith (\(a, b) c -> (a, c, b))
                       (filter (flip elem newFields . fst) inds)
                       (catMaybes old)
-    createIndices mname id commit findices
+    createIndices mname id commit indsTbl
 
     return (Right ())
 
@@ -222,12 +224,12 @@ update mname id commit findices =
 -- Does not check if instance exists.
 delete :: ModelName
        -> InstanceId
-       -> [FieldIndex]
+       -> IndicesTable
        -> Redis (Either Reply ())
-delete mname id findices =
+delete mname id indsTbl =
     let
         key = instanceKey mname id
-        inds = (\(a, _, b) -> (a, b)) <$> findices
+        inds = second sorted <$> M.toList indsTbl
     in do
       old <- getOldIndices key $ map fst inds
       lrem (modelTimeline mname) 1 id >> del [key]

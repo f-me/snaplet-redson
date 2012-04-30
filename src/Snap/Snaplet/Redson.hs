@@ -21,6 +21,7 @@ import qualified Prelude (id)
 import Prelude hiding (concat, FilePath, id, read)
 
 import Control.Applicative
+import Control.Arrow (second)
 import Control.Monad.State hiding (put)
 
 import Data.Aeson as A
@@ -52,6 +53,7 @@ import Database.Redis hiding (auth)
 
 
 import qualified Snap.Snaplet.Redson.Snapless.CRUD as CRUD
+import Snap.Snaplet.Redson.Snapless.Index
 import Snap.Snaplet.Redson.Snapless.Metamodel
 import Snap.Snaplet.Redson.Snapless.Metamodel.Loader (loadModels)
 import Snap.Snaplet.Redson.Permissions
@@ -191,7 +193,7 @@ post = ifTop $ do
 
         mname <- getModelName
         Right newId <- runRedisDB database $
-           CRUD.create mname commit (maybe [] indices mdl)
+           CRUD.create mname commit (maybe M.empty indices mdl)
 
         ps <- gets events
         liftIO $ PS.publish ps $ creationMessage mname newId
@@ -241,7 +243,7 @@ put = ifTop $ do
         id <- getInstanceId
         mname <- getModelName        
         Right _ <- runRedisDB database $ 
-           CRUD.update mname id j (maybe [] indices mdl)
+           CRUD.update mname id j (maybe M.empty indices mdl)
         modifyResponse $ setResponseCode 204
 
 
@@ -266,7 +268,7 @@ delete = ifTop $ do
     when (null r) $
          handleError notFound
 
-    runRedisDB database $ CRUD.delete mname id (maybe [] indices mdl)
+    runRedisDB database $ CRUD.delete mname id (maybe M.empty indices mdl)
 
     modifyResponse $ setContentType "application/json"
     writeLBS (commitToJson (M.fromList r))
@@ -370,8 +372,8 @@ search =
           where
             (t, h) = BU.break (== '-') str
             h' = B.drop 1 h
-            md1 = maybeRead $ BU.toString $ CRUD.collate t
-            md2 = maybeRead $ BU.toString $ CRUD.collate h'
+            md1 = maybeRead $ BU.toString $ CRUD.collateValue t
+            md2 = maybeRead $ BU.toString $ CRUD.collateValue h'
             md2' = maybe md1 Just md2
             monadPairZip f g = do { a <- f; b <- g; return (a, b); }
 
@@ -410,17 +412,18 @@ search =
 
               query       <- fromMaybe "" <$> getParam "q"
               -- Produce Just SearchTerm
-              let collate c = if c then CRUD.collate else Prelude.id
-              let indexValues = map (mapSnd (`collate` query) . dropThrd) 
-                                    $ filter (not . thrd) $ indices m
+              let collateValue c = if c then CRUD.collateValue else Prelude.id
+              let indexValues = map (mapSnd (`collateValue` query) . (second collate))
+                                    $ filter (not . sorted . snd)
+                                    $ M.toList $ indices m
 
               termIds' <-
                 case rangeParse query of
                   Just (d1, d2) ->
-                    mapM (\(a, _, _) ->
+                    mapM (\(a, _) ->
                           runRedisDB database $
                             redisRangeSearch m a d1 d2)
-                        $ filter thrd $ indices m
+                        $ filter (sorted . snd) $ M.toList $ indices m
                   Nothing -> return []
               
               -- For every term, get list of ids which match it
@@ -444,15 +447,8 @@ search =
                         _ -> writeLBS $ A.encode $
                              map (`CRUD.onlyFields` outFields) instances
 
-dropThrd :: (a, b, c) -> (a, b)
-dropThrd (a, b, _) = (a, b)
-
-thrd :: (a, b, c) -> c
-thrd (_, _, c) = c
-
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd f (a, b) = (a, f b)
-
 
 -----------------------------------------------------------------------------
 -- | CRUD routes for models.
@@ -497,6 +493,9 @@ redsonInit topAuth = makeSnaplet
                       lookupDefault "resources/models/"
                                     cfg "models-directory"
 
+            indDir <- liftIO $
+                      lookupDefault "resources/indices/"
+                                    cfg "models-directory"
             transp <- liftIO $
                       lookupDefault False
                                     cfg "transparent-mode"
@@ -505,6 +504,6 @@ redsonInit topAuth = makeSnaplet
                       lookupDefault "resources/field-groups.json"
                                     cfg "field-groups-file"
 
-            mdls <- liftIO $ loadModels mdlDir grpDef
+            mdls <- liftIO $ loadModels mdlDir indDir grpDef
             addRoutes routes
             return $ Redson r topAuth p mdls transp

@@ -20,16 +20,13 @@ import Data.Maybe
 
 import qualified Data.Map as M
 
+import Snap.Snaplet.Redson.Snapless.Index
 
 type ModelName = B.ByteString
 
 type FieldName = B.ByteString
 
 type FieldValue = B.ByteString
-
--- | Name of indexed field, collation and ordered flag.
-type FieldIndex = (FieldName, Bool, Bool)
-
 
 -- | List of field key-value pairs, or contents of model isntance.
 --
@@ -58,9 +55,6 @@ type FieldMeta = M.Map FieldName Value
 -- | Form field object.
 data Field = Field { name           :: FieldName
                    , fieldType      :: B.ByteString
-                   , index          :: Bool
-                   , indexCollate   :: Bool
-                   , indexSorted    :: Bool
                    , groupName      :: Maybe B.ByteString
                    , meta           :: Maybe FieldMeta
                    , _canRead       :: Permissions
@@ -95,8 +89,7 @@ data Model = Model { modelName      :: ModelName
                    , _canReadM      :: Permissions
                    , _canUpdateM    :: Permissions
                    , _canDeleteM    :: Permissions
-                   , indices        :: [FieldIndex]
-                   -- ^ Cached list of index fields.
+                   , indices        :: IndicesTable
                    }
              deriving Show
 
@@ -117,7 +110,7 @@ instance FromJSON Model where
         v .:? "canRead"   .!= Nobody      <*>
         v .:? "canUpdate" .!= Nobody      <*>
         v .:? "canDelete" .!= Nobody      <*>
-        pure []
+        pure M.empty
     parseJSON _          = error "Could not parse model description"
 
 instance ToJSON Model where
@@ -125,7 +118,6 @@ instance ToJSON Model where
       [ "name"       .= modelName mdl
       , "title"      .= title mdl
       , "fields"     .= fields mdl
-      , "indices"    .= indices mdl
       , "canCreate"  .= _canCreateM mdl
       , "canRead"    .= _canReadM mdl
       , "canUpdate"  .= _canUpdateM mdl
@@ -149,9 +141,6 @@ instance FromJSON Field where
     parseJSON (Object v) = Field        <$>
       v .: "name"                       <*>
       v .:? "type" .!= defaultFieldType <*>
-      v .:? "index"        .!= False    <*>
-      v .:? "indexCollate" .!= False    <*>
-      v .:? "indexSorted" .!= False     <*>
       v .:? "groupName"                 <*>
       v .:? "meta"                      <*>
       v .:? "canRead"  .!= Nobody       <*>
@@ -162,9 +151,6 @@ instance ToJSON Field where
     toJSON f = object
       [ "name"          .= name f
       , "type"          .= fieldType f
-      , "index"         .= index f
-      , "indexCollate"  .= indexCollate f
-      , "indexSorted "  .= indexSorted f
       , "groupName"     .= groupName f
       , "canRead"       .= _canRead f
       , "canWrite"      .= _canWrite f
@@ -260,18 +246,6 @@ doApplications model =
         processField [] _ = []
     in
       model{fields = foldl' processField (fields model) (applications model)}
-
-
--- | Set indices field of model to list of 'FieldIndex'es
-cacheIndices :: Model -> Model
-cacheIndices model = 
-    let
-        maybeCacheIndex indexList field =
-            case (index field, indexCollate field, indexSorted field) of
-              (True, c, o) -> (name field, c, o):indexList
-              _ -> indexList
-    in
-      model{indices = foldl' maybeCacheIndex [] (fields model)}
 
 
 ------------------------------------------------------------------------------

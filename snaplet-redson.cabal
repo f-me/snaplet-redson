@@ -52,6 +52,7 @@ library
 
   exposed-modules:      Snap.Snaplet.Redson,
                         Snap.Snaplet.Redson.Snapless.CRUD,
+                        Snap.Snaplet.Redson.Snapless.Index,
                         Snap.Snaplet.Redson.Snapless.Metamodel,
                         Snap.Snaplet.Redson.Snapless.Metamodel.Loader,
                         Snap.Snaplet.Redson.Util
@@ -62,6 +63,7 @@ library
     aeson               == 0.6.*,
     base                == 4.*,
     bytestring          == 0.9.*,
+    utf8-string         == 0.3.*,
     configurator        == 0.2.*,
     containers          >= 0.4.1 && < 0.5,
     data-lens           >= 2.0.1 && < 2.1,

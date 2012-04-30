@@ -48,12 +48,20 @@ loadModel :: FilePath
           -- ^ Group definitions
           -> IO (Maybe Model)
 loadModel modelFile groups
-    =  (fmap $ cacheIndices
-             . doApplications
+    =  (fmap $ doApplications
              . spliceGroups groups)
     <$> parseFile modelFile
 
-
+loadIndices :: FilePath
+            -> Model
+            -> IO Model
+loadIndices indicesFile mdl
+    = do
+        minds <- parseFile indicesFile
+        return $ case minds of
+          Just inds -> mdl { indices = M.fromList inds }
+          Nothing -> mdl
+        
 -- | Build metamodel name from its file path.
 pathToModelName :: FilePath -> ModelName
 pathToModelName filepath = B.pack $ takeBaseName filepath
@@ -64,24 +72,27 @@ pathToModelName filepath = B.pack $ takeBaseName filepath
 -- TODO: Perhaps rely on special directory file which explicitly lists
 -- all models.
 loadModels :: FilePath -- ^ Models directory
+           -> FilePath -- ^ Indices directory
            -> FilePath -- ^ Group definitions file
            -> IO (M.Map ModelName Model)
-loadModels directory groupsFile =
+loadModels directory idir groupsFile =
       do
         dirEntries <- getDirectoryContents directory
         -- Leave out non-files
-        mdlFiles <- filterM doesFileExist
-                 (map (directory </>) dirEntries)
+        mdlFiles <- filterM (doesFileExist . fst)
+                 (map (liftM2 (,) (directory </>)
+                                  (idir </>))
+                      dirEntries)
         gs <- loadGroups groupsFile
         case gs of
           Just groups -> do
-                  mdls <- mapM (\m -> do
+                  mdls <- mapM (\(m, i) -> do
                                   mres <- loadModel m groups
-                                  return $! case mres of
-                                    Just mdl -> mdl
+                                  case mres of
+                                    Just mdl -> loadIndices i mdl
                                     Nothing -> error $ "Could not parse " ++ m
                                ) mdlFiles
                   -- Splice groups & cache indices for served models
                   return $ M.fromList $
-                         zip (map pathToModelName mdlFiles) mdls
+                         zip (map (pathToModelName . fst) mdlFiles) mdls
           Nothing -> error $ "Bad groups file " ++ groupsFile
