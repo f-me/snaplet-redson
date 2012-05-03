@@ -8,17 +8,19 @@ module Snap.Snaplet.Redson.Snapless.Metamodel
 where
 
 import Control.Applicative
-
-import Data.Aeson
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as LB
-
-import Data.Lens.Common
-import Data.Lens.Template
+import Control.Concurrent.MVar
 import Data.List
 import Data.Maybe
 
 import qualified Data.Map as M
+
+import Data.Aeson
+import Data.Lens.Common
+import Data.Lens.Template
+
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as LB
+import qualified Text.Search.NGram as NG
 
 import Snap.Snaplet.Redson.Snapless.Index
 
@@ -90,8 +92,9 @@ data Model = Model { modelName      :: ModelName
                    , _canUpdateM    :: Permissions
                    , _canDeleteM    :: Permissions
                    , indices        :: IndicesTable
+                   , ngramIndex     :: Maybe (MVar (NG.Index B.ByteString))
                    }
-             deriving Show
+--             deriving Show
 
 makeLenses [''Model]
 
@@ -110,7 +113,8 @@ instance FromJSON Model where
         v .:? "canRead"   .!= Nobody      <*>
         v .:? "canUpdate" .!= Nobody      <*>
         v .:? "canDelete" .!= Nobody      <*>
-        pure M.empty
+        pure M.empty                      <*>
+        pure Nothing
     parseJSON _          = error "Could not parse model description"
 
 instance ToJSON Model where

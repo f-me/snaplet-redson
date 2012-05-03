@@ -61,7 +61,14 @@ loadIndices indicesFile mdl
         return $ case minds of
           Just inds -> mdl { indices = M.fromList inds }
           Nothing -> mdl
-        
+
+{-
+initNGramIndex ::  
+               -> Model
+               -> IO Model
+initNGramIndex 
+-}
+
 -- | Build metamodel name from its file path.
 pathToModelName :: FilePath -> ModelName
 pathToModelName filepath = B.pack $ takeBaseName filepath
@@ -89,7 +96,7 @@ loadModels directory idir groupsFile =
                   mdls <- mapM (\(m, i) -> do
                                   mres <- loadModel m groups
                                   case mres of
-                                    Just mdl -> loadIndices i mdl
+                                    Just mdl -> {- initNGramIndex <$> -} loadIndices i mdl
                                     Nothing -> error $ "Could not parse " ++ m
                                ) mdlFiles
                   -- Splice groups & cache indices for served models

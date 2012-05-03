@@ -52,14 +52,15 @@ library
 
   exposed-modules:      Snap.Snaplet.Redson,
                         Snap.Snaplet.Redson.Snapless.CRUD,
-                        Snap.Snaplet.Redson.Snapless.Index,
                         Snap.Snaplet.Redson.Snapless.Metamodel,
                         Snap.Snaplet.Redson.Snapless.Metamodel.Loader,
                         Snap.Snaplet.Redson.Util
   other-modules:        Snap.Snaplet.Redson.Permissions,
-                        Snap.Snaplet.Redson.Search
+                        Snap.Snaplet.Redson.Snapless.Index,
+                        Snap.Snaplet.Redson.Search,
+                        Snap.Snaplet.Redson.Search.NGram
 
-  build-depends:        
+  build-depends:
     aeson               == 0.6.*,
     base                == 4.*,
     bytestring          == 0.9.*,
@@ -70,10 +71,12 @@ library
     data-lens-template  == 2.1.*,
     easy-file           == 0.1.*,
     hedis               == 0.4.*,
+    ngram-index,
     mtl                 == 2.*,
     snap                == 0.8.*,
     snap-core           == 0.8.*,
     snaplet-redis       == 0.1.*,
     text                == 0.11.*,
+    transformers,
     websockets          == 0.6.*,
     websockets-snap     == 0.6.*

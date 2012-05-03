@@ -18,7 +18,7 @@ module Snap.Snaplet.Redson
 where
 
 import qualified Prelude (id)
-import Prelude hiding (concat, FilePath, id, read)
+import Prelude hiding (FilePath, id, read)
 
 import Control.Applicative
 import Control.Arrow (second)
@@ -51,14 +51,15 @@ import qualified Network.WebSockets.Util.PubSub as PS
 
 import Database.Redis hiding (auth)
 
-
-import qualified Snap.Snaplet.Redson.Snapless.CRUD as CRUD
 import Snap.Snaplet.Redson.Snapless.Index
 import Snap.Snaplet.Redson.Snapless.Metamodel
 import Snap.Snaplet.Redson.Snapless.Metamodel.Loader (loadModels)
 import Snap.Snaplet.Redson.Permissions
 import Snap.Snaplet.Redson.Search
 import Snap.Snaplet.Redson.Util
+
+import qualified Snap.Snaplet.Redson.Snapless.CRUD as CRUD
+import qualified Snap.Snaplet.Redson.Search.NGram as NGram
 
 ------------------------------------------------------------------------------
 -- | Redson snaplet state type.
@@ -175,6 +176,11 @@ deletionMessage = modelMessage "delete"
 commitToJson :: Commit -> LB.ByteString
 commitToJson = A.encode
 
+-- | Try get indices or return empty list
+maybeIndices = maybe M.empty indices
+
+-- | Try get ngram index
+maybeNgramIndex = maybe Nothing ngramIndex
 
 ------------------------------------------------------------------------------
 -- | Handle instance creation request
@@ -192,15 +198,18 @@ post = ifTop $ do
              handleError forbidden
 
         mname <- getModelName
-        Right newId <- runRedisDB database $
-           CRUD.create mname commit (maybe M.empty indices mdl)
+
+        newId <- runRedisDB database $ do
+           Right i <- CRUD.create mname commit (maybeIndices mdl)
+           NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.create i (maybeIndices mdl) commit
+           return i
 
         ps <- gets events
         liftIO $ PS.publish ps $ creationMessage mname newId
 
         -- http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html#sec9.5:
         --
-        -- the response SHOULD be 201 (Created) and contain an entity which
+        -- the response SHOULD be 201 (Created) and contain an entity  which
         -- describes the status of the request and refers to the new
         -- resource
         modifyResponse $ setContentType "application/json" . setResponseCode 201
@@ -241,6 +250,12 @@ put = ifTop $ do
              handleError forbidden
 
         id <- getInstanceId
+        mname <- getModelName 
+        runRedisDB database $ do
+           Right old <- NGram.getRecord mname id (maybeIndices mdl)
+           Right _ <- CRUD.update mname id j (maybeIndices mdl)
+           NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.update id (maybeIndices mdl) old j
+
         mname <- getModelName        
         Right _ <- runRedisDB database $ 
            CRUD.update mname id j (maybe M.empty indices mdl)
@@ -268,7 +283,10 @@ delete = ifTop $ do
     when (null r) $
          handleError notFound
 
-    runRedisDB database $ CRUD.delete mname id (maybe M.empty indices mdl)
+    runRedisDB database $ do
+        Right c <- NGram.getRecord mname id (maybeIndices mdl)
+        CRUD.delete mname id (maybeIndices mdl)
+        NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.delete id (maybeIndices mdl) c
 
     modifyResponse $ setContentType "application/json"
     writeLBS (commitToJson (M.fromList r))
@@ -377,8 +395,6 @@ search =
             md2' = maybe md1 Just md2
             monadPairZip f g = do { a <- f; b <- g; return (a, b); }
 
-        intersectAll = foldl1' intersect
-        unionAll = foldl1' union
         -- Fetch instance by id to JSON
         fetchInstance id key = runRedisDB database $ do
                                  Right r <- hgetall key
@@ -389,56 +405,28 @@ search =
         case mdl of
           Nothing -> handleError notFound
           Just m -> 
-            let
-                mname = modelName m
-            in do
+            do
               -- TODO: Mark these field names as reserved
-              mType <- getParam "_matchType"
-              sType <- getParam "_searchType"
               outFields <- maybe [] (B.split comma) <$>
                            getParam "_fields"
-
-              let patFunction = case mType of
-                               Just "p"  -> prefixMatch
-                               Just "s"  -> substringMatch
-                               _         -> prefixMatch
-
-              let searchType  = case sType of
-                               Just "and" -> intersectAll
-                               Just "or"  -> unionAll
-                               _          -> intersectAll
-
               itemLimit   <- fromIntParam "_limit" defaultSearchLimit
-
               query       <- fromMaybe "" <$> getParam "q"
-              -- Produce Just SearchTerm
-              let collateValue c = if c then CRUD.collateValue else Prelude.id
-              let indexValues = map (mapSnd (`collateValue` query) . (second collate))
-                                    $ filter (not . sorted . snd)
-                                    $ M.toList $ indices m
 
-              termIds' <-
-                case rangeParse query of
-                  Just (d1, d2) ->
-                    mapM (\(a, _) ->
-                          runRedisDB database $
-                            redisRangeSearch m a d1 d2)
-                        $ filter (sorted . snd) $ M.toList $ indices m
-                  Nothing -> return []
-              
-              -- For every term, get list of ids which match it
+              let collater c = if c then CRUD.collateValue else Prelude.id
+
               termIds <- runRedisDB database $
-                         redisSearch m indexValues patFunction
-              
+                redisSearch (M.toList $ indices m) query
+             
               modifyResponse $ setContentType "application/json"
-              case (filter (not . null) (termIds' ++ termIds)) of
+
+              case termIds of
                 [] -> writeLBS $ A.encode ([] :: [Value])
                 tids -> do
                       -- Finally, list of matched instances
                       instances <- take itemLimit <$> 
                                    mapM (\id -> fetchInstance id $
                                          CRUD.instanceKey mname id)
-                                  (searchType tids)
+                                        tids
                       -- If _fields provided, leave only requested
                       -- fields and serve array of arrays. Otherwise,
                       -- serve array of objects.
@@ -446,10 +434,34 @@ search =
                         [] -> writeLBS $ A.encode instances
                         _ -> writeLBS $ A.encode $
                              map (`CRUD.onlyFields` outFields) instances
+            where
+                mname = modelName m
 
-mapSnd :: (b -> c) -> (a, b) -> (a, c)
-mapSnd f (a, b) = (a, f b)
+                repack :: Ord a => [(b, a)] -> [(a, [b])]
+                repack lst = 
+                    M.toList map
+                  where 
+                    map = repack_ lst M.empty
 
+                    repack_ [] m = m
+                    repack_ ((x, y):zs) m = 
+                      repack_ zs $ M.insertWith (++) y [x] m
+
+                redisSearch lst query =
+                    liftM concat $ mapM
+                      (\(typ, fNames) ->
+                        case typ of
+                          Sorted ->
+                            case rangeParse query of
+                              Just (d1, d2) ->
+                                redisRangeSearch m fNames d1 d2
+                              Nothing ->
+                                return []
+                          FullText -> redisFullTextSearch m fNames query
+                          Reverse -> redisReverseSearch m fNames query
+                      ) $ repack lst
+
+            
 -----------------------------------------------------------------------------
 -- | CRUD routes for models.
 routes :: [(B.ByteString, Handler b (Redson b) ())]
