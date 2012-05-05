@@ -6,10 +6,14 @@ module Snap.Snaplet.Redson.Search.NGram
     , delete
     , getRecord
     , modifyIndex
+    , initNGramIndex
     ) where
 import Control.Arrow (second)
-import Control.Monad.IO.Class
-import Data.Maybe (mapMaybe, isJust, fromJust)
+import Control.Monad (forM)
+import Control.Monad.IO.Class (liftIO)
+import Data.Functor
+import Data.Maybe (catMaybes, mapMaybe, isJust, fromJust)
+import Data.Monoid
 
 import qualified Data.Map as M
 
@@ -17,6 +21,7 @@ import Control.Concurrent.MVar
 import Database.Redis
 
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C8
 import qualified Text.Search.NGram as NG
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
@@ -91,3 +96,24 @@ modifyIndex
 modifyIndex (Just mvar) act = liftIO $ modifyMVar_ mvar (return . NG.apply act)
 modifyIndex Nothing _ = return ()
 
+initNGramIndex
+    :: Model
+    -> Redis Model
+initNGramIndex mdl =
+    do
+      ix <- index
+      return $ mdl { ngramIndex = Just ix }
+  where
+    mName = C8.unpack $ modelName mdl
+    index = 
+      do
+        Right ([Just maxIdStr]) <- mget [C8.pack $ "global:" ++ mName ++ ":id"]
+        let maxId = Prelude.read $ C8.unpack maxIdStr
+        strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i -> do
+          Right fVals <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
+          let
+            decode' = T.unpack . E.decodeUtf8
+            values = map decode' $ filter (not . B.null) $ catMaybes fVals
+            i' = C8.pack $ show i
+          return $ map (\v -> NG.value (NG.ngram 3) v i') values)
+        liftIO $ newMVar (NG.apply mempty strIds)

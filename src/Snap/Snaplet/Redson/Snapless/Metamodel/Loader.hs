@@ -15,21 +15,19 @@ module Snap.Snaplet.Redson.Snapless.Metamodel.Loader
 where
 
 import Control.Monad
-
-import Data.Aeson as A
-
 import Data.Functor
-
-import qualified Data.ByteString.Char8 as B
-import qualified Data.ByteString.Lazy as LB (readFile)
 
 import qualified Data.Map as M
 
+import Data.Aeson as A
 import System.EasyFile
+import Snap.Snaplet
+import Snap.Snaplet.RedisDB
 
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy as LB (readFile)
 
 import Snap.Snaplet.Redson.Snapless.Metamodel
-
 
 parseFile :: FromJSON a => FilePath -> IO (Maybe a)
 parseFile filename = A.decode <$> LB.readFile filename
@@ -62,16 +60,9 @@ loadIndices indicesFile mdl
           Just inds -> mdl { indices = M.fromList inds }
           Nothing -> mdl
 
-{-
-initNGramIndex ::  
-               -> Model
-               -> IO Model
-initNGramIndex 
--}
-
 -- | Build metamodel name from its file path.
 pathToModelName :: FilePath -> ModelName
-pathToModelName filepath = B.pack $ takeBaseName filepath
+pathToModelName filepath = C8.pack $ takeBaseName filepath
 
 
 -- | Read all models from directory to a map.
@@ -96,7 +87,7 @@ loadModels directory idir groupsFile =
                   mdls <- mapM (\(m, i) -> do
                                   mres <- loadModel m groups
                                   case mres of
-                                    Just mdl -> {- initNGramIndex <$> -} loadIndices i mdl
+                                    Just mdl -> loadIndices i mdl
                                     Nothing -> error $ "Could not parse " ++ m
                                ) mdlFiles
                   -- Splice groups & cache indices for served models

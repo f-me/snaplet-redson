@@ -30,15 +30,16 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.UTF8 as BU (toString, break)
 import qualified Data.ByteString.Lazy as LB (ByteString)
 
-import Data.Configurator
-
-import Data.Lens.Common
-import Data.Lens.Template
-
-import Data.List (foldl1', intersect, union)
-import qualified Data.Map as M
 
 import Data.Maybe
+import Data.Lens.Common
+import Data.Lens.Template
+import Data.List (foldl1', intersect, union)
+import qualified Data.Traversable as T
+
+import qualified Data.Map as M
+
+import Data.Configurator
 
 import Snap.Core
 import Snap.Snaplet
@@ -517,5 +518,8 @@ redsonInit topAuth = makeSnaplet
                                     cfg "field-groups-file"
 
             mdls <- liftIO $ loadModels mdlDir indDir grpDef
+            mdls' <- liftIO $ do
+              conn <- connect defaultConnectInfo
+              runRedis conn $ T.mapM NGram.initNGramIndex mdls
             addRoutes routes
-            return $ Redson r topAuth p mdls transp
+            return $ Redson r topAuth p mdls' transp
