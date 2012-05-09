@@ -100,14 +100,18 @@ initNGramIndex
     :: Model
     -> Redis Model
 initNGramIndex mdl =
-    do
-      ix <- index
-      return $ mdl { ngramIndex = Just ix }
+    if indices mdl == M.empty
+      then return mdl
+      else do
+        ix <- index
+        return $ mdl { ngramIndex = Just ix }
   where
     mName = C8.unpack $ modelName mdl
     index = 
       do
-        Right ([Just maxIdStr]) <- mget [C8.pack $ "global:" ++ mName ++ ":id"]
+        -- Fix it
+        a <- mget [C8.pack $ "global:" ++ mName ++ ":id"]
+        let Right ([Just maxIdStr]) = a
         let maxId = Prelude.read $ C8.unpack maxIdStr
         strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i -> do
           Right fVals <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
