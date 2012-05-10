@@ -15,6 +15,7 @@ module Snap.Snaplet.Redson.Snapless.Metamodel.Loader
 where
 
 import Control.Monad
+import Control.Monad.Trans
 import Data.Functor
 
 import qualified Data.Map as M
@@ -55,7 +56,8 @@ loadIndices :: FilePath
             -> IO Model
 loadIndices indicesFile mdl
     = do
-        minds <- parseFile indicesFile
+        isExist <- doesFileExist indicesFile
+        minds <- if isExist then parseFile indicesFile else return Nothing
         return $ case minds of
           Just inds -> mdl { indices = M.fromList inds }
           Nothing -> mdl

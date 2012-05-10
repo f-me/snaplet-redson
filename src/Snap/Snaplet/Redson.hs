@@ -32,11 +32,7 @@ import qualified Data.ByteString.Lazy as LB (ByteString)
 
 import Data.Maybe
 import Data.Lens.Common
-<<<<<<< HEAD
 import Data.Lens.Template
-=======
-
->>>>>>> master
 import Data.List (foldl1', intersect, union)
 import qualified Data.Traversable as T
 
@@ -176,18 +172,11 @@ post = ifTop $ do
              handleError forbidden
 
         mname <- getModelName
-<<<<<<< HEAD
-
+        commit' <- applyHooks mname commit
         newId <- runRedisDB database $ do
-           Right i <- CRUD.create mname commit (maybeIndices mdl)
+           Right i <- CRUD.create mname commit' (maybeIndices mdl)
            NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.create i (maybeIndices mdl) commit
            return i
-=======
-        commit' <- applyHooks mname commit
-
-        Right newId <- runRedisDB database $
-           CRUD.create mname commit' (maybe [] indices mdl)
->>>>>>> master
 
         ps <- gets events
         liftIO $ PS.publish ps $ creationMessage mname newId
@@ -235,22 +224,13 @@ put = ifTop $ do
              handleError forbidden
 
         id <- getInstanceId
-<<<<<<< HEAD
         mname <- getModelName 
+        commit' <- applyHooks mname commit
         runRedisDB database $ do
            Right old <- NGram.getRecord mname id (maybeIndices mdl)
-           Right _ <- CRUD.update mname id j (maybeIndices mdl)
-           NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.update id (maybeIndices mdl) old j
+           Right _ <- CRUD.update mname id commit' (maybeIndices mdl)
+           NGram.modifyIndex (maybeNgramIndex mdl) $ NGram.update id (maybeIndices mdl) old commit'
 
-        mname <- getModelName        
-        Right _ <- runRedisDB database $ 
-           CRUD.update mname id j (maybe M.empty indices mdl)
-=======
-        mname <- getModelName
-        commit' <- applyHooks mname commit
-        Right _ <- runRedisDB database $
-           CRUD.update mname id commit' (maybe [] indices mdl)
->>>>>>> master
         modifyResponse $ setResponseCode 204
 
 
@@ -396,15 +376,8 @@ search =
       ifTop $ withCheckSecurity $ \_ mdl -> do
         case mdl of
           Nothing -> handleError notFound
-<<<<<<< HEAD
           Just m -> 
             do
-=======
-          Just m ->
-            let
-                mname = modelName m
-            in do
->>>>>>> master
               -- TODO: Mark these field names as reserved
               outFields <- maybe [] (B.split comma) <$>
                            getParam "_fields"
@@ -447,6 +420,7 @@ search =
                       repack_ zs $ M.insertWith (++) y [x] m
 
                 redisSearch lst query =
+                  do
                     liftM concat $ mapM
                       (\(typ, fNames) ->
                         case typ of
@@ -507,7 +481,7 @@ redsonInit topAuth hooks = makeSnaplet
 
             indDir <- liftIO $
                       lookupDefault "resources/indices/"
-                                    cfg "models-directory"
+                                    cfg "indices-directory"
             transp <- liftIO $
                       lookupDefault False
                                     cfg "transparent-mode"
@@ -522,3 +496,4 @@ redsonInit topAuth hooks = makeSnaplet
               runRedis conn $ T.mapM NGram.initNGramIndex mdls
             addRoutes routes
             return $ Redson r topAuth p mdls' transp hooks
+
