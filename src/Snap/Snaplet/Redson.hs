@@ -420,6 +420,7 @@ search =
                       repack_ zs $ M.insertWith (++) y [x] m
 
                 redisSearch lst query =
+                  do
                     liftM concat $ mapM
                       (\(typ, fNames) ->
                         case typ of
@@ -480,7 +481,7 @@ redsonInit topAuth hooks = makeSnaplet
 
             indDir <- liftIO $
                       lookupDefault "resources/indices/"
-                                    cfg "models-directory"
+                                    cfg "indices-directory"
             transp <- liftIO $
                       lookupDefault False
                                     cfg "transparent-mode"

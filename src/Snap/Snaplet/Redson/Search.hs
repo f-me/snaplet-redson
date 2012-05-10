@@ -73,8 +73,8 @@ redisRangeSearch model fNames lower upper =
     liftM concat $ mapM search_ fNames
   where
     search_ fName =
-      zrangebyscore (instanceKey mname fName) lower upper 
-        >>= (\(Right sets) -> return sets)
+      (zrangebyscore (instanceKey mname fName) lower upper 
+        >>= (\(Right sets) -> return sets))
     mname = modelName model
 
 -- | Search for term, return list of matching instances

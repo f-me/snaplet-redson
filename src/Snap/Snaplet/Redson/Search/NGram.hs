@@ -76,10 +76,9 @@ getRecord
     -> IndicesTable
     -> Redis (Either Reply Commit)
 getRecord mname i fs =
-    let
-        key = recordKey mname i
-        fs' = M.keys fs
-    in do
+    if fs == M.empty
+      then return $ Right M.empty
+      else do
         values <- hmget key fs'
         let toCommit v =
                 M.fromList
@@ -87,6 +86,9 @@ getRecord mname i fs =
                 $ filter (isJust . snd)
                 $ (fs' `zip` v)
         return $ fmap toCommit values
+   where
+      key = recordKey mname i
+      fs' = M.keys fs
 
 -- | Modify index with action
 modifyIndex
@@ -100,24 +102,25 @@ initNGramIndex
     :: Model
     -> Redis Model
 initNGramIndex mdl =
-    if indices mdl == M.empty
-      then return mdl
-      else do
-        ix <- index
-        return $ mdl { ngramIndex = Just ix }
+   do
+     ix <- index
+     return $ mdl { ngramIndex = Just ix }
   where
     mName = C8.unpack $ modelName mdl
     index = 
       do
         -- Fix it
         a <- mget [C8.pack $ "global:" ++ mName ++ ":id"]
-        let Right ([Just maxIdStr]) = a
-        let maxId = Prelude.read $ C8.unpack maxIdStr
-        strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i -> do
-          Right fVals <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
-          let
-            decode' = T.unpack . E.decodeUtf8
-            values = map decode' $ filter (not . B.null) $ catMaybes fVals
-            i' = C8.pack $ show i
-          return $ map (\v -> NG.value (NG.ngram 3) v i') values)
-        liftIO $ newMVar (NG.apply mempty strIds)
+        case a of
+          Right ([Just maxIdStr]) ->
+            do
+              let maxId = Prelude.read $ C8.unpack maxIdStr
+              strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i -> do
+                Right fVals <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
+                let
+                  decode' = T.unpack . E.decodeUtf8
+                  values = map decode' $ filter (not . B.null) $ catMaybes fVals
+                  i' = C8.pack $ show i
+                return $ map (\v -> NG.value (NG.ngram 3) v i') values)
+              liftIO $ newMVar (NG.apply mempty strIds)
+          _ -> liftIO $ newMVar $ NG.apply mempty mempty
