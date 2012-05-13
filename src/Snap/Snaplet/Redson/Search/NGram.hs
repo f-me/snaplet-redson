@@ -115,12 +115,17 @@ initNGramIndex mdl =
           Right ([Just maxIdStr]) ->
             do
               let maxId = Prelude.read $ C8.unpack maxIdStr
-              strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i -> do
-                Right fVals <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
-                let
-                  decode' = T.unpack . E.decodeUtf8
-                  values = map decode' $ filter (not . B.null) $ catMaybes fVals
-                  i' = C8.pack $ show i
-                return $ map (\v -> NG.value (NG.ngram 3) v i') values)
+              strIds <- (mconcat . concat) <$> (forM [1..maxId] $ \i ->
+                do
+                  b <- hmget (C8.pack $ mName ++ ":" ++ show i) $ M.keys $ indices mdl
+                  case b of
+                    Right fVals ->
+                      do
+                        let
+                          decode' = T.unpack . E.decodeUtf8
+                          values = map decode' $ filter (not . B.null) $ catMaybes fVals
+                          i' = C8.pack $ show i
+                        return $ map (\v -> NG.value (NG.ngram 3) v i') values
+                    _ -> return [])
               liftIO $ newMVar (NG.apply mempty strIds)
           _ -> liftIO $ newMVar $ NG.apply mempty mempty

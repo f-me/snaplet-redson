@@ -47,14 +47,7 @@ redisReverseSearch model fNames fValue =
     search_ fName =
       do
         Right sets <- smembers $ modelIndex mname fName fValue
-        case sets of
-            -- Do not attempt sunion with no arguments.
-            [] -> return []
-            _ -> do
-              -- TODO Maybe use sunionstore and perform further
-              -- operations on Redis as well.
-              Right ids <- sunion sets
-              return ids
+        return sets
     mname = modelName model
 
 ------------------------------------------------------------------------------
