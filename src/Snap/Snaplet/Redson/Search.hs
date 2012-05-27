@@ -6,7 +6,8 @@ Ad-hoc Redis search backed by field indices.
 
 -}
 
-module Snap.Snaplet.Redson.Search
+module Snap.Snaplet.Redson.Search where
+{-
     ( PatternFunction
     , SearchTerm
     , prefixMatch
@@ -75,3 +76,4 @@ redisSearch model searchTerms patFunction =
      in
        -- Try to get search results for every index field
        mapM (getTermIds . (patFunction mname)) searchTerms
+-}

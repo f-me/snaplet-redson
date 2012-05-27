@@ -58,8 +58,6 @@ type FieldMeta = M.Map FieldName Value
 -- | Form field object.
 data Field = Field { name           :: FieldName
                    , fieldType      :: B.ByteString
-                   , index          :: Bool
-                   , indexCollate   :: Bool
                    , groupName      :: Maybe B.ByteString
                    , meta           :: Maybe FieldMeta
                    , _canRead       :: Permissions
@@ -95,7 +93,6 @@ data Model = Model { modelName      :: ModelName
                    , _canReadM      :: Permissions
                    , _canUpdateM    :: Permissions
                    , _canDeleteM    :: Permissions
-                   , indices        :: [FieldIndex]
                    -- ^ Cached list of index fields.
                    }
              deriving Show
@@ -117,8 +114,7 @@ instance FromJSON Model where
         v .:? "canCreate"    .!= Nobody   <*>
         v .:? "canRead"      .!= Nobody   <*>
         v .:? "canUpdate"    .!= Nobody   <*>
-        v .:? "canDelete"    .!= Nobody   <*>
-        pure []
+        v .:? "canDelete"    .!= Nobody
     parseJSON _          = error "Could not parse model description"
 
 instance ToJSON Model where
@@ -127,7 +123,6 @@ instance ToJSON Model where
       , "title"      .= title mdl
       , "fields"     .= fields mdl
       , "defaults"   .= defaults mdl
-      , "indices"    .= indices mdl
       , "canCreate"  .= _canCreateM mdl
       , "canRead"    .= _canReadM mdl
       , "canUpdate"  .= _canUpdateM mdl
@@ -151,8 +146,6 @@ instance FromJSON Field where
     parseJSON (Object v) = Field        <$>
       v .: "name"                       <*>
       v .:? "type" .!= defaultFieldType <*>
-      v .:? "index"        .!= False    <*>
-      v .:? "indexCollate" .!= False    <*>
       v .:? "groupName"                 <*>
       v .:? "meta"                      <*>
       v .:? "canRead"  .!= Nobody       <*>
@@ -163,8 +156,6 @@ instance ToJSON Field where
     toJSON f = object
       [ "name"          .= name f
       , "type"          .= fieldType f
-      , "index"         .= index f
-      , "indexCollate"  .= indexCollate f
       , "groupName"     .= groupName f
       , "canRead"       .= _canRead f
       , "canWrite"      .= _canWrite f
@@ -260,18 +251,6 @@ doApplications model =
         processField [] _ = []
     in
       model{fields = foldl' processField (fields model) (applications model)}
-
-
--- | Set indices field of model to list of 'FieldIndex'es
-cacheIndices :: Model -> Model
-cacheIndices model = 
-    let
-        maybeCacheIndex indexList field =
-            case (index field, indexCollate field) of
-              (True, c) -> (name field, c):indexList
-              _ -> indexList
-    in
-      model{indices = foldl' maybeCacheIndex [] (fields model)}
 
 
 ------------------------------------------------------------------------------

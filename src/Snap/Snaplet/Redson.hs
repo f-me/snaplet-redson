@@ -57,6 +57,8 @@ import Snap.Snaplet.Redson.Search
 import Snap.Snaplet.Redson.Util
 import Snap.Snaplet.Redson.Internals
 
+import Snap.Snaplet.Redson.Snapless.Index.Config as Ix (readConfig)
+
 
 
 ------------------------------------------------------------------------------
@@ -167,7 +169,7 @@ post = ifTop $ do
         commit'' <- applyHooks mname commit'
 
         Right newId <- runRedisDB database $
-           CRUD.create mname commit'' (maybe [] indices mdl)
+           CRUD.create mname commit''
 
         ps <- gets events
         liftIO $ PS.publish ps $ creationMessage mname newId
@@ -218,7 +220,7 @@ put = ifTop $ do
         mname <- getModelName
         commit' <- applyHooks mname commit
         Right _ <- runRedisDB database $
-           CRUD.update mname id commit' (maybe [] indices mdl)
+           CRUD.update mname id commit'
         modifyResponse $ setContentType "application/json"
         writeLBS $ A.encode $ M.differenceWith
           (\a b -> if a == b then Nothing else Just a)
@@ -246,7 +248,7 @@ delete = ifTop $ do
     when (null r) $
          handleError notFound
 
-    runRedisDB database $ CRUD.delete mname id (maybe [] indices mdl)
+    runRedisDB database $ CRUD.delete mname id
 
     modifyResponse $ setContentType "application/json"
     writeLBS (commitToJson (M.fromList r))
@@ -341,6 +343,7 @@ defaultSearchLimit = 100
 -- search parameters.
 --
 -- Currently not available in transparent mode.
+{-
 search :: Handler b (Redson b) ()
 search =
     let
@@ -406,7 +409,7 @@ search =
 
 mapSnd :: (b -> c) -> (a, b) -> (a, c)
 mapSnd f (a, b) = (a, f b)
-
+-}
 
 -----------------------------------------------------------------------------
 -- | CRUD routes for models.
@@ -419,7 +422,7 @@ routes = [ (":model/timeline", method GET timeline)
          , (":model/:id", method GET get')
          , (":model/:id", method PUT put)
          , (":model/:id", method DELETE delete)
-         , (":model/search/", method GET search)
+--       , (":model/search/", method GET search)
          ]
 
 
@@ -452,6 +455,12 @@ redsonInitWithHooks topAuth hooks = makeSnaplet
             p <- liftIO PS.newPubSub
 
             cfg <- getSnapletUserConfig
+            ixPath <- liftIO $
+                      lookupDefault "resources/indices.json"
+                                    cfg "indices-config-file"
+
+            ixConfig <- liftIO $ Ix.readConfig ixPath
+
             mdlDir <- liftIO $
                       lookupDefault "resources/models/"
                                     cfg "models-directory"
@@ -466,4 +475,4 @@ redsonInitWithHooks topAuth hooks = makeSnaplet
 
             mdls <- liftIO $ loadModels mdlDir grpDef
             addRoutes routes
-            return $ Redson r topAuth p mdls transp hooks
+            return $ Redson r topAuth p mdls transp ixConfig hooks

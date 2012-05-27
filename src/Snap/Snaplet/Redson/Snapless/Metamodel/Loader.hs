@@ -41,15 +41,14 @@ loadGroups = parseFile
 
 
 -- | Load model from specified location, performing group splicing,
--- applications and filling index cache.
+-- applications
 loadModel :: FilePath
           -- ^ Path to model definition file
           -> Groups 
           -- ^ Group definitions
           -> IO (Maybe Model)
 loadModel modelFile groups
-    =  (fmap $ cacheIndices
-             . doApplications
+    =  (fmap $ doApplications
              . spliceGroups groups)
     <$> parseFile modelFile
 

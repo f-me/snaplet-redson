@@ -24,6 +24,8 @@ import qualified Snap.Snaplet.Redson.Snapless.CRUD as CRUD
 import Snap.Snaplet.Redson.Snapless.Metamodel
 import Snap.Snaplet.Redson.Util
 
+import Snap.Snaplet.Redson.Snapless.Index.Config (IndexMap)
+
 
 type Hook b = FieldValue -> Commit -> Handler b (Redson b) Commit
 type HookMap b = M.Map ModelName (M.Map FieldName [Hook b])
@@ -37,7 +39,8 @@ data Redson b = Redson
              , models :: M.Map ModelName Model
              , transparent :: Bool
              -- ^ Operate in transparent mode (not security checks).
-             , hookMap :: HookMap b
+             , indexMap :: IndexMap
+             , hookMap  :: HookMap b
              }
 
 makeLens ''Redson

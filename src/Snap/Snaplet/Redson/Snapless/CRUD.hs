@@ -17,7 +17,6 @@ module Snap.Snaplet.Redson.Snapless.CRUD
     -- * Redis helpers
     , InstanceId
     , instanceKey
-    , modelIndex
     , modelTimeline
     , collate
     , onlyFields
@@ -27,9 +26,7 @@ where
 
 import Prelude hiding (id, read)
 
-import Control.Monad.State
 import Data.Functor
-import Data.Maybe
 
 import Data.Char
 import qualified Data.ByteString.Char8 as B
@@ -64,76 +61,11 @@ modelTimeline model = B.concat ["global:", model, ":timeline"]
 
 
 ------------------------------------------------------------------------------
--- | Build Redis key for field index of model.
-modelIndex :: ModelName
-           -> B.ByteString -- ^ Field name
-           -> B.ByteString -- ^ Field value
-           -> B.ByteString
-modelIndex model field value = B.concat [model, ":", field, ":", value]
-
-
-------------------------------------------------------------------------------
 -- | Strip value of punctuation, spaces, convert all to lowercase.
 collate :: FieldValue -> FieldValue
 collate = E.encodeUtf8 . T.toLower .
           (T.filter (\c -> (not (isSpace c || isPunctuation c)))) .
           E.decodeUtf8
-
-
-------------------------------------------------------------------------------
--- | Perform provided action for every indexed field in commit.
---
--- Action is called with index field name and its value in commit.
-forIndices :: Commit
-           -> [FieldIndex]
-           -> (FieldName -> FieldValue -> Redis ())
-           -> Redis ()
-forIndices commit findices action =
-    mapM_ (\i -> case (M.lookup i commit) of
-                   Just v -> action i v
-                   Nothing -> return ())
-    (fst <$> findices)
-
-
-------------------------------------------------------------------------------
--- | Create reverse indices for new commit.
-createIndices :: ModelName
-              -> InstanceId
-              -> Commit
-              -> [FieldIndex]
-              -> Redis ()
-createIndices mname id commit findices =
-    forIndices commit findices $
-                   \i rawVal -> 
-                       let 
-                           v = collate rawVal
-                       in
-                         when (v /= "") $
-                         sadd (modelIndex mname i v) [id] >> return ()
-
-
-------------------------------------------------------------------------------
--- | Remove indices previously created by commit (should contain all
--- indexed fields only).
-deleteIndices :: ModelName
-              -> InstanceId                -- ^ Instance id.
-              -> [(FieldName, FieldValue)] -- ^ Commit with old
-                                           -- indexed values (zipped
-                                           -- from HMGET).
-              -> Redis ()
-deleteIndices mname id commit =
-    mapM_ (\(i, v) -> srem (modelIndex mname i v) [id])
-          commit
-
-
-------------------------------------------------------------------------------
--- | Get old values of index fields stored under key.
-getOldIndices :: B.ByteString -> [FieldName] -> Redis [Maybe B.ByteString]
-getOldIndices key findices = do
-  reply <- hmget key findices
-  return $ case reply of
-             Left _ -> []
-             Right l -> l
 
 
 ------------------------------------------------------------------------------
@@ -150,18 +82,16 @@ onlyFields commit names = map (flip M.lookup commit) names
 -- TODO: Support pubsub from here
 create :: ModelName           -- ^ Model name
        -> Commit              -- ^ Key-values of instance data
-       -> [FieldIndex]
        -> Redis (Either Reply InstanceId)
-create mname commit findices = do
+create mname commit = do
   -- Take id from global:model:id
   Right n <- incr $ modelIdKey mname
   newId <- return $ (B.pack . show) n
 
   -- Save new instance
-  _ <- hmset (instanceKey mname newId) (M.toList commit)
-  _ <- lpush (modelTimeline mname) [newId]
+  Right _ <- hmset (instanceKey mname newId) (M.toList commit)
+  Right _ <- lpush (modelTimeline mname) [newId]
 
-  createIndices mname newId commit findices
   return (Right newId)
 
 
@@ -181,24 +111,12 @@ read mname id = (fmap M.fromList) <$> hgetall key
 update :: ModelName
        -> InstanceId
        -> Commit
-       -> [FieldIndex]
        -> Redis (Either Reply ())
-update mname id commit findices =
+update mname id commit =
   let
       key = instanceKey mname id
       unpacked = M.toList commit
-      newFields = map fst unpacked
-      indnames = fst <$> findices
-  in do
-    old <- getOldIndices key indnames
-    hmset key unpacked
-
-    deleteIndices mname id $
-                  zip (filter (flip elem newFields) indnames)
-                      (catMaybes old)
-    createIndices mname id commit findices
-
-    return (Right ())
+  in  fmap (const ()) <$> hmset key unpacked
 
 ------------------------------------------------------------------------------
 -- | Remove existing instance in Redis, cleaning up old indices.
@@ -206,14 +124,10 @@ update mname id commit findices =
 -- Does not check if instance exists.
 delete :: ModelName
        -> InstanceId
-       -> [FieldIndex]
        -> Redis (Either Reply ())
-delete mname id findices =
+delete mname id =
     let
         key = instanceKey mname id
-        indnames = fst <$> findices
     in do
-      old <- getOldIndices key indnames
       lrem (modelTimeline mname) 1 id >> del [key]
-      deleteIndices mname id (zip indnames (catMaybes old))
       return (Right ())
