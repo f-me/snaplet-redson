@@ -32,10 +32,7 @@ import Data.Configurator
 
 import Data.Lens.Common
 
-import Data.List (foldl1', intersect, union)
 import qualified Data.Map as M
-
-import Data.Maybe
 
 import Snap.Core
 import Snap.Snaplet
@@ -53,7 +50,6 @@ import qualified Snap.Snaplet.Redson.Snapless.CRUD as CRUD
 import Snap.Snaplet.Redson.Snapless.Metamodel
 import Snap.Snaplet.Redson.Snapless.Metamodel.Loader (loadModels)
 import Snap.Snaplet.Redson.Permissions
-import Snap.Snaplet.Redson.Search
 import Snap.Snaplet.Redson.Util
 import Snap.Snaplet.Redson.Internals
 
