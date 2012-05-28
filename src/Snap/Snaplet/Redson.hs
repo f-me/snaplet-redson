@@ -233,11 +233,12 @@ put = ifTop $ do
         ixList <- gets
             $ fromMaybe [] . M.lookup mname . ixByModel . indexMap
         runRedisDB database $ do
-           Right _ <- CRUD.update mname id commit'
            forM_ ixList $ \ix@(IndexConfig{..}) ->
               case ix'type of
                 Ix.Exact -> Ix1.update ix fullId commit'
                 _ -> return ()
+           Right _ <- CRUD.update mname id commit'
+           return ()
         modifyResponse $ setContentType "application/json"
         writeLBS $ A.encode $ M.differenceWith
           (\a b -> if a == b then Nothing else Just a)
@@ -349,10 +350,6 @@ listModels = ifTop $ do
                              [("name"::B.ByteString, n),
                               ("title", title m)])
              readables)
-
-
-defaultSearchLimit :: Int
-defaultSearchLimit = 100
 
 
 -----------------------------------------------------------------------------

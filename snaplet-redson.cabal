@@ -71,7 +71,7 @@ library
     data-lens-template  == 2.1.*,
     easy-file           == 0.1.*,
     hedis               == 0.4.*,
-    mtl                 == 2.*,
+    mtl                 == 2.0.*,
     snap                == 0.8.*,
     snap-core           == 0.8.*,
     snaplet-redis       == 0.1.*,

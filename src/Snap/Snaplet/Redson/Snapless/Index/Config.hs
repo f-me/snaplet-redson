@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Snap.Snaplet.Redson.Snapless.Index.Config
@@ -23,6 +24,15 @@ type FieldValue = B.ByteString
 type IndexName = B.ByteString
 
 data IndexType = Exact | Substring | Range
+
+instance FromJSON IndexType where
+  parseJSON (String s) = return $ case s of
+    "exact"     -> Exact
+    "substring" -> Substring
+    "range"     -> Range
+    _ -> error "Invalid IndexType"
+  parseJSON _ = error "Could not parse IndexType"
+
 data IndexConfig = IndexConfig
   {ix'type  :: IndexType
   ,ix'from  :: [FieldName]
@@ -37,7 +47,6 @@ data InternalIndexConfig = InternalIndexConfig
   ,iix'model :: ModelName
   }
 
-$(deriveFromJSON id ''IndexType)
 $(deriveFromJSON (drop 4) ''InternalIndexConfig)
 
 data IndexMap = IndexMap
