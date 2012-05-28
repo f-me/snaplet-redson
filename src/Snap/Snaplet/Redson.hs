@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {-|
@@ -26,12 +27,13 @@ import Control.Monad.State hiding (put)
 import Data.Aeson as A
 
 import qualified Data.ByteString as B
+-- import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as LB (ByteString)
 
 import Data.Configurator
 
 import Data.Lens.Common
-
+import Data.Maybe
 import qualified Data.Map as M
 
 import Snap.Core
@@ -53,7 +55,10 @@ import Snap.Snaplet.Redson.Permissions
 import Snap.Snaplet.Redson.Util
 import Snap.Snaplet.Redson.Internals
 
-import Snap.Snaplet.Redson.Snapless.Index.Config as Ix (readConfig)
+import Snap.Snaplet.Redson.Snapless.Index.Config as Ix
+  (readConfig,IndexConfig(..),IndexType(..))
+import Snap.Snaplet.Redson.Snapless.Index.InvertedRedis as Ix1
+  (create, read, update)
 
 
 
@@ -164,8 +169,15 @@ post = ifTop $ do
         let commit' = maybe commit (M.union commit . defaults) mdl 
         commit'' <- applyHooks mname commit'
 
-        Right newId <- runRedisDB database $
-           CRUD.create mname commit''
+        ixList <- gets $ fromMaybe [] . M.lookup mname . indexMap
+        newId <- runRedisDB database $ do
+           Right newId <- CRUD.create mname commit''
+           let fullId = B.concat [mname, ":", newId]
+           forM_ ixList $ \ix@(IndexConfig{..}) ->
+              case ix'type of
+                Ix.Exact -> Ix1.create ix fullId commit''
+                _ -> return ()
+           return newId
 
         ps <- gets events
         liftIO $ PS.publish ps $ creationMessage mname newId
@@ -215,8 +227,15 @@ put = ifTop $ do
         id <- getInstanceId
         mname <- getModelName
         commit' <- applyHooks mname commit
-        Right _ <- runRedisDB database $
-           CRUD.update mname id commit'
+        let fullId = B.concat [mname, ":", id]
+
+        ixList <- gets $ fromMaybe [] . M.lookup mname . indexMap
+        runRedisDB database $ do
+           Right _ <- CRUD.update mname id commit'
+           forM_ ixList $ \ix@(IndexConfig{..}) ->
+              case ix'type of
+                Ix.Exact -> Ix1.update ix fullId commit'
+                _ -> return ()
         modifyResponse $ setContentType "application/json"
         writeLBS $ A.encode $ M.differenceWith
           (\a b -> if a == b then Nothing else Just a)
