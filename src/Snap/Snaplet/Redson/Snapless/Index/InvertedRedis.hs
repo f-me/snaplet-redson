@@ -76,7 +76,6 @@ update (IndexConfig{..}) objId commit = do
     errs -> throw $ UpdateException $ show errs
 
 
-----------------------------------------------------------------------
 read :: IndexConfig -> FieldValue -> Redis [FieldValue]
 read (IndexConfig{..}) val = do
   let key = B.concat [ix'name, ":", val]
@@ -86,6 +85,7 @@ read (IndexConfig{..}) val = do
     Right r  -> return r
 
 
+----------------------------------------------------------------------
 mkMap :: Ord k => [k] -> [Maybe a] -> Map k a
 mkMap ks = M.fromList . catMaybes . zipWith (\k v -> (k,) <$> v) ks
 

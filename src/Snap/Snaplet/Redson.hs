@@ -27,7 +27,7 @@ import Control.Monad.State hiding (put)
 import Data.Aeson as A
 
 import qualified Data.ByteString as B
--- import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy as LB (ByteString)
 
 import Data.Configurator
@@ -56,7 +56,7 @@ import Snap.Snaplet.Redson.Util
 import Snap.Snaplet.Redson.Internals
 
 import Snap.Snaplet.Redson.Snapless.Index.Config as Ix
-  (readConfig,IndexConfig(..),IndexType(..))
+  (readConfig,IndexConfig(..),IndexType(..),IndexMap(..))
 import Snap.Snaplet.Redson.Snapless.Index.InvertedRedis as Ix1
   (create, read, update)
 
@@ -169,7 +169,8 @@ post = ifTop $ do
         let commit' = maybe commit (M.union commit . defaults) mdl 
         commit'' <- applyHooks mname commit'
 
-        ixList <- gets $ fromMaybe [] . M.lookup mname . indexMap
+        ixList <- gets
+            $ fromMaybe [] . M.lookup mname . ixByModel . indexMap
         newId <- runRedisDB database $ do
            Right newId <- CRUD.create mname commit''
            let fullId = B.concat [mname, ":", newId]
@@ -229,7 +230,8 @@ put = ifTop $ do
         commit' <- applyHooks mname commit
         let fullId = B.concat [mname, ":", id]
 
-        ixList <- gets $ fromMaybe [] . M.lookup mname . indexMap
+        ixList <- gets
+            $ fromMaybe [] . M.lookup mname . ixByModel . indexMap
         runRedisDB database $ do
            Right _ <- CRUD.update mname id commit'
            forM_ ixList $ \ix@(IndexConfig{..}) ->
@@ -358,73 +360,31 @@ defaultSearchLimit = 100
 -- search parameters.
 --
 -- Currently not available in transparent mode.
-{-
 search :: Handler b (Redson b) ()
-search =
-    let
-        intersectAll = foldl1' intersect
-        unionAll = foldl1' union
-        -- Fetch instance by id to JSON
-        fetchInstance id key = runRedisDB database $ do
-                                 Right r <- hgetall key
-                                 return $ (M.fromList $ ("id", id):r)
-        comma = 0x2c
-    in
-      ifTop $ withCheckSecurity $ \_ mdl -> do
-        case mdl of
-          Nothing -> handleError notFound
-          Just m ->
-            let
-                mname = modelName m
-            in do
-              -- TODO: Mark these field names as reserved
-              mType <- getParam "_matchType"
-              sType <- getParam "_searchType"
-              outFields <- maybe [] (B.split comma) <$>
-                           getParam "_fields"
+search = ifTop $ withCheckSecurity $ \_ mdl -> do
+  case mdl of
+    Nothing -> handleError notFound
+    Just m -> do
+      let mname = modelName m
+      Just ixName <- getParam "ix"
+      Just query  <- getParam "q"
+      fields      <- getParam "fields"
+      Just ix     <- gets $ M.lookup ixName . ixByName . indexMap
+      res <- runRedisDB database $ Ix1.read ix query
+      modifyResponse $ setContentType "application/json"
+      case fields of
+        Nothing -> writeLBS $ A.encode res
+        Just fs -> do
+          res' <- runRedisDB database $ forM res $ hgetFields $ B8.split ',' fs
+          writeLBS $ A.encode res'
+        -- FIXME: take, drop
 
-              let patFunction = case mType of
-                               Just "p"  -> prefixMatch
-                               Just "s"  -> substringMatch
-                               _         -> prefixMatch
+-- FIXME: error handling
+hgetFields :: [FieldName] -> CRUD.InstanceId -> Redis [FieldValue]
+hgetFields fs objId
+  = either (error . show) (map (fromMaybe ""))
+  <$> hmget objId fs
 
-              let searchType  = case sType of
-                               Just "and" -> intersectAll
-                               Just "or"  -> unionAll
-                               _          -> intersectAll
-
-              itemLimit   <- fromIntParam "_limit" defaultSearchLimit
-
-              query       <- fromMaybe "" <$> getParam "q"
-              -- Produce Just SearchTerm
-              let collate c = if c then CRUD.collate else Prelude.id
-              let indexValues = map (mapSnd (`collate` query)) $ indices m
-
-              -- For every term, get list of ids which match it
-              termIds <- runRedisDB database $
-                         redisSearch m indexValues patFunction
-
-              modifyResponse $ setContentType "application/json"
-              case (filter (not . null) termIds) of
-                [] -> writeLBS $ A.encode ([] :: [Value])
-                tids -> do
-                      -- Finally, list of matched instances
-                      instances <- take itemLimit <$>
-                                   mapM (\id -> fetchInstance id $
-                                         CRUD.instanceKey mname id)
-                                  (searchType tids)
-                      -- If _fields provided, leave only requested
-                      -- fields and serve array of arrays. Otherwise,
-                      -- serve array of objects.
-                      case outFields of
-                        [] -> writeLBS $ A.encode instances
-                        _ -> writeLBS $ A.encode $
-                             map (`CRUD.onlyFields` outFields) instances
-
-
-mapSnd :: (b -> c) -> (a, b) -> (a, c)
-mapSnd f (a, b) = (a, f b)
--}
 
 -----------------------------------------------------------------------------
 -- | CRUD routes for models.
@@ -437,7 +397,7 @@ routes = [ (":model/timeline", method GET timeline)
          , (":model/:id", method GET get')
          , (":model/:id", method PUT put)
          , (":model/:id", method DELETE delete)
---       , (":model/search/", method GET search)
+         , (":model/search/", method GET search)
          ]
 
 
