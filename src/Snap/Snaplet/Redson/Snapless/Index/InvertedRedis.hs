@@ -58,9 +58,10 @@ create (IndexConfig{..}) objId commit
 update :: IndexConfig -> InstanceId -> Commit -> Redis ()
 update (IndexConfig{..}) objId commit = do
   Right mTo <- hget objId ix'to
-  let to = fromMaybe
-        (error $ "InvertedRedis.update: no such field " ++ show ix'to)
-        mTo
+  let to = flip fromMaybe mTo
+         $ fromMaybe
+            (error $ "InvertedRedis.update: no such field " ++ show ix'to)
+            (M.lookup ix'to commit)
   Right from <- hmgetMap objId ix'from
   let from' = M.union (spliceMap ix'from commit) from
   let vals  = nub $ M.elems from
